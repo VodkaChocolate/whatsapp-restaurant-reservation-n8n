@@ -1,0 +1,2432 @@
+{
+  "name": "Restaurant_Reservation",
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=User: {{ $json.user_id }} sent the following message:\n{{ $json.message }}\n\nToday's date: {{ new Date().toISOString().split('T')[0] }}\n\nAlso, please do not use bold formatting in the outputs (e.g., example). All responses should be returned as plain text.\n\nGenerate the response in the same language the user wrote in.\n\nThe response must be exactly in the format: { \"message\": \"\", \"link\": \"\" }\n\nRules:\n\nSend your response only as JSON; do not write anything outside of JSON.\n\nIf there is no link, use \"link\": \"\"\n\nDo not include links or bold formatting in the message field",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=## AI Assistant Role\n\n**Role:**\nYou are a professional and friendly AI assistant that helps customers **make, update, or cancel restaurant reservations** through chat. You interact with multiple tools connected to **Google Sheets** and a **Calculator** to process requests accurately and reliably.\n\n---\n\n### Mandatory Rules\n- **Identity Verification Rule**\n- **Date Validity Rule**\n- **Date & Time Precision Rules**\n- **Time Format & Interval Rules**\n- **Past Date / Time Check**\n\n---\n\n## Current Date & Time\n\n- Current date and time: `{{ $now }}`\n- Use this to:\n  - Reject reservation requests for past times.\n  - Reject requests partially or fully outside the restaurant's working hours and suggest **closest valid time options**.\n  - Record the timestamp when a reservation is made.\n\n---\n\n## TOOLS YOU HAVE ACCESS TO\n\n### Data Lookup Tools\n- **Get Table Information** \u2192 contains table features: capacity, smoking allowed, location, near window, high chair, and notes.\n- **Get Table Reservations** \u2192 contains all reservation records with Reservation ID, Date, Time Slot, Table, Party Size, Name, Phone, Mail, Request, Status, Source, Booked At.\n\n### Memory Tool and Usage Restriction\n- **Simple Memory** \u2192 remembers prior user messages for multi-turn conversations.\n- Simple Memory can ONLY be used to continue casual conversation.\n- Simple Memory MUST NOT be used to identify, update, or cancel reservations.\n- Reservation-related actions must rely ONLY on:\n  - Explicit user-provided Reservation ID\n  OR\n  - Explicit user-provided Name AND Phone Number in the current request\n\n### Calculation Tool\n- **Calculator** \u2192 used only to calculate the next Reservation ID:\n  - Extract the highest Reservation ID from the Reservations sheet.\n  - Add +1 to get the next unique ID for a new booking.\n\n### Write/Modify Tools\n- **Create Reservations** \u2192 create the reservation row using collected data\n- **Update Reservations** \u2192 update the reservation row using collected data\n- **Cancel Reservations** \u2192 change the status column of the corresponding row\n\n---\n\n## RULES & LOGIC TO FOLLOW\n\n### 1. Reservation Timing\n- Default reservation duration is **2 hours** if the user only provides a time.\n- Reservations **must not overlap** with existing reservations for the same table.\n- Reservations must be **fully within working hours**.\n- If a requested time is unavailable due to **overlap or working hours**, suggest the **closest available time options**.\n- Always reject reservations for **past times**.\n\n### 2. Multi-Reservation Confirmation\n- If a user requests **more than one reservation for the same date**, confirm **all reservations together** before booking.\n\n### 3. Privacy\n- Never share details of other customers' reservations.\n- Only communicate generic availability or alternative time suggestions.\n\n### 4. Booking & Updates\n- Collect **all required information**: name, phone number, mail address, number of guests, date, time, special requests.\n- Use **Create Reservations** to save new reservations.\n- Use **Update Reservations** to update the reservation row with new details.\n- Use **Cancel Reservations** to change the status column to Cancelled.\n- Confirm each action to the user with a **warm and clear message**, including the **Reservation ID** when appropriate.\n\n---\n\n## MANDATORY EXECUTION CHECKLIST\n\nAfter every new reservation, the agent MUST complete ALL of the following steps in order before sending any confirmation to the user:\n\nSTEP 1: Gather all required information \u2713\nSTEP 2: Check table availability \u2713\nSTEP 3: Generate Reservation ID via Calculator Tool \u2713\nSTEP 4: Call Create Reservations Tool \u2192 save to Google Sheets \u2713\nSTEP 5: ONLY AFTER Step 4 is confirmed complete \u2192 send confirmation to user \u2713\n\nThe agent MUST NOT send any confirmation message until Step 4 is successfully completed.\nIf Step 4 fails, the agent must inform the user and retry \u2014 never skip it silently.\n\n---\n\n## Suggested Responses\n\n- For unavailable times:\n> \"That time isn't available. The closest options are: [Option 1], [Option 2]. Which one works for you?\"\n\n- For no matching reservation when updating or cancelling:\n> \"I couldn't find a reservation under that name and contact. Could you double-check the details?\"\n> \"I wasn't able to find a reservation with those details. Would you like me to try again?\"\n\n- For confirmed reservations:\n> \"Your reservation is confirmed! Your Reservation ID is [Reservation ID]. See you soon!\"\n\n---\n\n# TASKS YOU CAN PERFORM\n\n## 1. Make a New Reservation\n\n### Step 1 \u2013 Gather User Information\nAsk the user:\n- How many guests will be attending?\n- What date and time would you like the reservation?\n- Any seating preferences? (e.g., smoking, near window, outdoor, high chair)\n\nThen ask:\n- The user's **name**, **phone number**, and **mail address**.\n- If a reservation already exists with the **same name and date**, inform the customer about the existing reservation.\n\n### Step 2 \u2013 Table Selection\n- Search the **Table Information** to filter tables based on:\n  - Seating preferences\n  - Location\n  - Smoking available\n  - Guest capacity\n- Cross-check availability using **Get Table Reservations**:\n  - If no reservation exists for the same table at the requested date and time \u2192 table is available.\n  - If a reservation exists for the same table at the requested date and time \u2192 table is unavailable; try same process with another table.\n\n### Step 3 \u2013 Generate Unique Reservation ID\n- Use the **Calculator Tool** to:\n  - Find the current highest Reservation ID\n  - Add **+1** to generate a new unique Reservation ID\n\n### Step 4 \u2013 Save Reservation (MANDATORY)\n- Use the **Create Reservations Tool** to save the reservation with all collected fields:\n  - **Reservation ID** (from Calculator Tool)\n  - **Date**\n  - **Time Slot**\n  - **Table** (dropdown cell)\n  - **Party Size**\n  - **Customer Name**\n  - **Phone Number**\n  - **Mail Address**\n  - **Requested Features** (parsed from preferences)\n  - **Status** = Confirmed\n  - **Source**\n  - **Booked At** = `{{ $now }}`\n- NEVER skip this step.\n- The task is NOT complete until the reservation row is successfully saved.\n\n### Step 5 \u2013 Confirm to User\n- Send a warm, clear message to confirm the reservation.\n- Include the **Reservation ID** in the confirmation.\n- ONLY send this confirmation after Step 4 is successfully completed.\n\n---\n\n## 2. Update an Existing Reservation\n\n### Step 1 \u2013 Identify Reservation\n- Ask the user for their **Reservation ID** OR **name and phone number**.\n- Use **Get Table Reservations** to find the matching row.\n\n### Step 2 \u2013 Determine Changes\n- Ask the user what they want to change (e.g., time, guest count, seating preferences).\n- Search for a new date and time using **Get Table Reservations**, following the same availability logic as booking (overlaps, working hours, default duration, table preferences).\n\n### Step 3 \u2013 Update Reservation Data (MANDATORY)\n- Use **Update Reservations Tool** to update the existing reservation row with the new details.\n- When calling Update Reservations, you MUST always set the **Status field to \"Modified\"** \u2014 this is mandatory for every update without exception.\n- NEVER skip this step.\n- NEVER leave the Status as \"Confirmed\" after an update \u2014 it MUST be changed to \"Modified\".\n- The task is NOT complete until the reservation row is successfully updated with Status = Modified.\n\n### Step 4 \u2013 Confirm Changes\n- Send a clear, warm confirmation message to the user including the updated details.\n\n**If no reservation is found:**\n> \"I couldn't find a reservation under that name and contact. Could you double-check the details?\"\n\n---\n\n## 3. Cancel a Reservation\n\n### Step 1 \u2013 Identify Reservation (MANDATORY)\n- The agent MUST ask the user to provide:\n  - Reservation ID\n  OR\n  - Customer Name AND Phone Number (both required)\n- The agent MUST NOT proceed until one of these is provided.\n- If multiple reservations match, ask the user to select one:\n  > \"To help you with this, I need to confirm your reservation. Could you please share your Reservation ID, or your name and phone number?\"\n- Use **Get Table Reservations** to find the matching row.\n\n### Step 2 \u2013 Cancel Reservation (MANDATORY)\n- Use **Cancel Reservations Tool** to update the **Status Column** to Cancelled.\n- NEVER skip this step.\n- The task is NOT complete until the status is successfully updated to Cancelled.\n\n### Step 3 \u2013 Confirm Cancellation\n- Confirm the cancellation to the user with a polite message.\n- ONLY send confirmation after the reservation status is successfully updated.\n\n**If no reservation is found:**\n> \"I wasn't able to find a reservation with those details. Would you like me to try again?\"\n\n---\n\n## RESERVATION STATUS RULES (MANDATORY)\n\nThe Status field must always reflect the current state of the reservation:\n\n- **Confirmed** \u2192 set automatically when a NEW reservation is created\n- **Modified** \u2192 set automatically when ANY existing reservation is UPDATED \u2014 NEVER leave as Confirmed after an update\n- **Cancelled** \u2192 set automatically when a reservation is CANCELLED\n\nThe agent MUST follow these status rules on every single action. Setting the wrong status or leaving it unchanged after an update is a critical error.\n\n---\n\n## BEHAVIOR GUIDELINES\n\n- Never allow bookings in the past (compare all requests with `{{ $now }}`)\n- Only increment Reservation ID using the Calculator tool\n- Respond in a friendly, confident, and professional tone\n- Ask for missing info clearly and helpfully\n- Never disclose, reference, or imply details of other customers' reservations\n- If the user requests more than one reservation on the same date, pause and ask for explicit confirmation before creating any of them\n- If a requested reservation overlaps with an existing reservation for the same table, do not create it \u2014 suggest available alternative time slots or find a new table\n\n---\n\n### Date Validity Rule (MANDATORY)\n\n- The agent MUST validate that the requested date is a real calendar date.\n- The agent MUST reject:\n  - Invalid day/month combinations\n  - February 29 on non-leap years\n  - Any date that does not exist in the Gregorian calendar\n\n- Leap year rules:\n  - A year is a leap year if: divisible by 4 AND (not divisible by 100 OR divisible by 400)\n\n- Example:\n  - February 29, 2026 \u2192 INVALID\n  - February 29, 2024 \u2192 VALID\n\n- If an invalid date is detected:\n  - DO NOT create or update any reservation\n  - DO NOT call any tools\n  - Politely inform the user and ask for a valid date\n\nBefore saving or updating any reservation:\n1. Parse the requested date into Day / Month / Year\n2. Validate the date against calendar rules\n3. If validation fails, stop immediately and ask:\n   > \"I'm sorry, but February 29 is not a valid date in 2026. This year February has only 28 days. Could you please choose a valid date?\"\n\n---\n\n### Time Format & Interval Rules (MANDATORY)\n\n- All reservation times MUST be in 30-minute intervals only.\n- Allowed minutes values are: :00 or :30.\n- Times such as :05, :12, :17, :37, :42, etc. are INVALID.\n- If a user provides an invalid time:\n  - DO NOT proceed with booking or updating.\n  - Politely reject the time.\n  - Ask the user to choose the closest valid time in :00 or :30 format.\n  - Always suggest the closest valid options.\n\n---\n\n### Date & Time Precision Rules (MANDATORY)\n\n- The user MUST provide an exact calendar date and exact time.\n- Relative date or time expressions are NOT allowed.\n\nInvalid examples include: tomorrow, next day, later today, in 2 hours, 5 days later, this weekend.\n\n- If a user uses a relative date or time:\n  - DO NOT interpret or calculate it.\n  - DO NOT proceed with booking or updating.\n  - Politely ask the user to provide an exact date and time.\n\n- Exceptions:\n  - Widely recognized fixed-date holidays are allowed (e.g. Valentine's Day, New Year's Eve, Christmas).\n  - When a holiday is mentioned, ask for the exact time if not provided.\n\n---\n\n### Single-Time Auto Duration Rule (MANDATORY)\n\n- If the user provides only a single start time (e.g. \"17:30\") without an end time or duration:\n  - Automatically set the reservation time slot to 2 hours. Example: 17:30 \u2192 17:30 \u2013 19:30\n  - Proceed with booking or updating without asking for confirmation.\n  - In the final confirmation message, explicitly inform the user that the standard 2-hour duration was applied.\n\n---\n\n### Self-Overlap Exception Rule (MANDATORY)\n\nWhen updating an existing reservation:\n- A table cannot be reserved for any time slot that overlaps with an existing reservation for the same table.\n- Exception: overlaps caused by the same Reservation ID MUST be ignored.\n- Overlaps with other customers' reservations are NEVER allowed.\n\nExample:\n- Existing: Reservation ID 42, 12:00 \u2013 14:00\n- Update to: 13:00 \u2013 15:00\n\u2192 Allowed because it is the same reservation.\n\n---\n\n### Identity Verification Rule (MANDATORY)\n\nFor ALL update or cancel requests:\n- The agent MUST explicitly ask for Reservation ID OR Customer Name AND Phone Number (both required).\n- The agent MUST NOT guess, infer, or reuse names/dates/times from previous messages.\n- The agent MUST NOT use memory or conversation context to identify a reservation.\n- If the user does not provide valid identification, stop and politely ask again.\n\n---\n\n## EXAMPLE RESPONSES\n\n- **New Reservation:**\n> \"I've reserved Table E2 for 2 guests on March 12th at 8:00 PM. It's outdoor and near the window.\"\n\n- **Updated Reservation:**\n> \"Your reservation has been updated to 7:30 PM on Table A1.\"\n\n- **Cancelled Reservation:**\n> \"Your reservation for Sarah Khan at 8:00 PM has been cancelled. Hope to see you soon!\"\n\nNote: Example responses may use natural language for confirmation, but user input MUST always follow Date & Time Precision Rules.\n\n---\n\n## AGENT ROLE\n\nYou are **Julian, the Reservation Concierge**. Your job is to ensure **seamless, accurate, and delightful bookings** for all guests.\n- Be professional and friendly.\n- Confirm every action clearly.\n- Provide helpful suggestions when requested times are unavailable.\n- Maintain privacy and never disclose other customers' reservation details.\n- Follow all reservation rules, including working hours, overlap checks, default 2-hour durations, and multi-reservation confirmations."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.8,
+      "position": [
+        848,
+        464
+      ],
+      "id": "561241f4-2e27-4b8d-ba70-e88d5f1e0c8e",
+      "name": "AI Agent",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "toolDescription": "All the fixed information about the hotel. First find the appropriate section from this source, then reply.",
+        "url": "YOUR_KNOWLEDGE_BASE_URL"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        592,
+        688
+      ],
+      "id": "f3580204-e7a6-40e1-a952-1f824250cbe0",
+      "name": "Knowledge_base"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        336,
+        688
+      ],
+      "id": "d5e6524b-7ae0-4025-8427-e155cb336a10",
+      "name": "ChatGPT-4.1",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('WhatsApp Trigger').item.json.contacts[0].wa_id }}",
+        "contextWindowLength": 15
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        464,
+        688
+      ],
+      "id": "38b5caa2-2bfc-4de5-afbb-6e2762dfb253",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "70b3a8f3-5116-41e6-b5f1-88d28ddd1a30",
+              "name": "output",
+              "value": "={{ $json.output }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1184,
+        368
+      ],
+      "id": "6c182f96-49e5-4615-bd6c-4261f7fcdf46",
+      "name": "2- Output to Object"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6ddb5e79-1702-417f-a880-44ee9524f1cb",
+              "name": "message",
+              "value": "={{ $json.output.message }}",
+              "type": "string"
+            },
+            {
+              "id": "4f27b49d-0149-4b6f-999b-5a94f5c75ad0",
+              "name": "link",
+              "value": "={{ $json.output.link }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1408,
+        368
+      ],
+      "id": "57d04d86-5666-44a1-86fa-bfdf30941a69",
+      "name": "3- Object to Fields"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "YOUR_WHATSAPP_PHONE_NUMBER_ID",
+        "recipientPhoneNumber": "={{ $('WhatsApp Trigger').item.json.contacts[0].wa_id }}",
+        "textBody": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        1632,
+        368
+      ],
+      "id": "c2174c43-a2b5-4721-876b-2df31815b6da",
+      "name": "Send message",
+      "webhookId": "d7235008-20b7-40db-b331-eaac9160b29b",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "45c4bf89-6db4-4116-8b03-8a9e8f442eae",
+              "name": "user_id",
+              "value": "={{ $json.messages[0].from }}",
+              "type": "string"
+            },
+            {
+              "id": "692f8093-94f9-42ad-ad31-a30450a766e2",
+              "name": "message",
+              "value": "={{ $json.messages[0].text.body }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        656,
+        384
+      ],
+      "id": "87d6eaeb-82b1-431c-a04c-619fb17b383a",
+      "name": "1- Incoming Data"
+    },
+    {
+      "parameters": {
+        "toolDescription": "This tool is used to learn official holiday and festival dates. If the user mentions a holiday or festival, you should use this tool to determine the exact dates.",
+        "url": "=https://calendarific.com/api/v2/holidays?api_key=YOUR_CALENDARIFIC_API_KEY&country=TR&year={{ new Date().getFullYear() }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        688
+      ],
+      "id": "4154689d-ea07-4885-9626-d6d814cbb3da",
+      "name": "Learn_Dates_Ogren"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "a0bf9719-4272-46f6-ab3b-eda6f7b44fd8",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $('WhatsApp Trigger').item.json.messages[0].type }}",
+              "rightValue": "text"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "48555c72-1f3f-4a19-8b19-1231bc6eaace",
+      "name": "If",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        -256,
+        400
+      ],
+      "typeVersion": 2.2
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Restaurant Tables",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Table Info",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "options": {}
+      },
+      "id": "87eeab52-8e2a-494f-a10d-2ddec2dfc644",
+      "name": "Get Table Information",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "position": [
+        848,
+        688
+      ],
+      "typeVersion": 4.6,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Restaurant Tables",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1226895599,
+          "mode": "list",
+          "cachedResultName": "Table Reservation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "options": {}
+      },
+      "id": "2e491c0a-8444-4e90-aca5-beb16555e44b",
+      "name": "Get Table Reservations",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "position": [
+        976,
+        688
+      ],
+      "typeVersion": 4.6,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "e6dd1448-0740-4ab0-b690-3f4f65f91143",
+      "name": "Calculator",
+      "type": "@n8n/n8n-nodes-langchain.toolCalculator",
+      "position": [
+        1104,
+        688
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "resource": "media",
+        "operation": "mediaUrlGet",
+        "mediaGetId": "={{ $json.messages[0].audio.id }}"
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        192
+      ],
+      "id": "87695d96-8928-4da3-9831-880b1f8c63ab",
+      "name": "Download media",
+      "webhookId": "e68ed00b-be5b-4ffa-b4ea-6e72d514c002",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        224,
+        192
+      ],
+      "id": "e394f554-1f7d-4ed2-a43a-bd83ec66a7ae",
+      "name": "HTTP Request",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [
+        448,
+        192
+      ],
+      "id": "63930fa5-d37d-45df-a5da-010fe347587b",
+      "name": "Transcribe a recording",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b0ad88be-eacb-424b-bb75-7e99367af9d2",
+              "leftValue": "={{ $('3- Object to Fields').item.json.message }}",
+              "rightValue": "confirmed ",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "898d8309-9cd1-4668-8b2f-43210ab44480",
+              "leftValue": "",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1856,
+        368
+      ],
+      "id": "d69214a8-edc1-4461-8843-6b8bd2a8fff0",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.Mail }}",
+        "subject": "Your reservation is confirmed!",
+        "message": "=Hi {{ $json.Name }}\n\nYour reservation is confirmed!\n\nDetails:\n- Date: {{ $json.Date }}\n- Time: {{ $json['Time Slot'] }}\n- Table: {{ $json.Table }}\n- Reservation ID: {{ $json['Reservation ID'] }}\n\nSee you soon!",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2592,
+        272
+      ],
+      "id": "57dfad1c-9482-4bda-814d-cea6147740fb",
+      "name": "Send a message",
+      "webhookId": "df91f251-6577-429e-97c4-cdef80fe7e38",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Restaurant Tables",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1226895599,
+          "mode": "list",
+          "cachedResultName": "Table Reservation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Reservation ID",
+              "lookupValue": "={{ $json.reservation_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2368,
+        272
+      ],
+      "id": "6b4880fb-86a1-43d8-b2d6-b8868a5bb08c",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"reservation_id\": \"{{\n    $('3- Object to Fields').item.json.message\n      .split('Reservation ID is ')[1]\n      ?.split('.')[0]\n      ?.trim() || ''\n  }}\"\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2144,
+        272
+      ],
+      "id": "f179e235-1d08-4b19-b970-f01197d6a85b",
+      "name": "Edit Fields",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## Voice To Text",
+        "height": 256,
+        "width": 768,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -128,
+        112
+      ],
+      "typeVersion": 1,
+      "id": "5351881a-fdb5-4001-91f7-54655ce55d86",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Restaurant Tables",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1226895599,
+          "mode": "list",
+          "cachedResultName": "Table Reservation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Reservation ID": "={{ $fromAI('Reservation_ID__using_to_match_', ``, 'string') }}",
+            "Booked At": "={{ $fromAI('Booked_At', ``, 'string') }}",
+            "Source": "={{ $fromAI('Source', ``, 'string') }}",
+            "Status": "={{ $fromAI('Status', ``, 'string') }}",
+            "Request": "={{ $fromAI('Request', ``, 'string') }}",
+            "Name": "={{ $fromAI('Name', ``, 'string') }}",
+            "Phone": "={{ $fromAI('Phone', ``, 'string') }}",
+            "Mail": "={{ $fromAI('Mail', ``, 'string') }}",
+            "Party size": "={{ $fromAI('Party_size', ``, 'string') }}",
+            "Table": "={{ $fromAI('Table', ``, 'string') }}",
+            "Time Slot": "={{ $fromAI('Time_Slot', ``, 'string') }}",
+            "Date": "={{ $fromAI('Date', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "Reservation ID"
+          ],
+          "schema": [
+            {
+              "id": "Reservation ID",
+              "displayName": "Reservation ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Time Slot",
+              "displayName": "Time Slot",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Table",
+              "displayName": "Table",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Party size",
+              "displayName": "Party size",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Mail",
+              "displayName": "Mail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Request",
+              "displayName": "Request",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Source",
+              "displayName": "Source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Booked At",
+              "displayName": "Booked At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        1232,
+        688
+      ],
+      "id": "3853c8ce-e668-4ae0-beaa-564fcb9c7077",
+      "name": "Create Reservations",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {}
+      },
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        -480,
+        400
+      ],
+      "id": "bf550ce2-4bcc-42c1-ac85-d3633fd774e9",
+      "name": "WhatsApp Trigger",
+      "webhookId": "14bb8b21-4218-4dff-9b69-7b1dfcdee2e1",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "WhatsApp OAuth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_EMAIL@gmail.com",
+          "mode": "list",
+          "cachedResultName": "YOUR_EMAIL@gmail.com"
+        },
+        "start": "={{ DateTime.fromISO($json[\"Date\"] + \"T\" + $json[\"Time Slot\"].split(\"-\")[0] + \":00\", {zone: \"Europe/Warsaw\"}).toISO() }}",
+        "end": "={{ DateTime.fromISO($json[\"Date\"] + \"T\" + $json[\"Time Slot\"].split(\"-\")[1] + \":00\", {zone: \"Europe/Warsaw\"}).toISO() }}",
+        "useDefaultReminders": false,
+        "additionalFields": {
+          "description": "={{ \"Reservation ID: \" + $json[\"Reservation ID\"] + \"\\nName: \" + $json[\"Name\"] + \"\\nPhone: \" + $json[\"Phone\"] + \"\\nMail: \" + $json[\"Mail\"] + \"\\nParty Size: \" + $json[\"Party size\"] + \"\\nTable: \" + $json[\"Table\"] + \"\\nDate: \" + $json[\"Date\"] + \"\\nTime Slot: \" + $json[\"Time Slot\"] + \"\\nRequest: \" + ($json[\"Request\"] || \"\") + \"\\nStatus: \" + $json[\"Status\"] + \"\\nSource: \" + $json[\"Source\"] + \"\\nBooked At: \" + $json[\"Booked At\"] }}",
+          "summary": "={{ $json[\"Reservation ID\"] + \" | \" + $json[\"Name\"] + \" | \" + $json[\"Phone\"] + \" | \" + $json[\"Party size\"] + \" | \" + $json[\"Table\"] + \" | \" + ($json[\"Request\"] || \"\") }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        -128,
+        960
+      ],
+      "id": "4b0daf7b-47b8-49f9-8a3a-65592f22d1eb",
+      "name": "Auto: Create Calendar Event",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cancel-check-001",
+              "leftValue": "={{ $json.Status }}",
+              "rightValue": "Cancelled",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1440
+      ],
+      "id": "a401808e-094c-4582-9592-6337defad930",
+      "name": "Auto: Is Cancelled?"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_EMAIL@gmail.com",
+          "mode": "list",
+          "cachedResultName": "YOUR_EMAIL@gmail.com"
+        },
+        "eventId": "={{ $json.Calendar_ID }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        256,
+        1344
+      ],
+      "id": "a9127511-b95d-48b1-bdbc-f0e9e1f443a4",
+      "name": "Auto: Find Event to Delete",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_EMAIL@gmail.com",
+          "mode": "list",
+          "cachedResultName": "YOUR_EMAIL@gmail.com"
+        },
+        "eventId": "={{ $json.id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        480,
+        1344
+      ],
+      "id": "7feb467e-0fdc-4bdb-888d-6670126386b4",
+      "name": "Auto: Delete Calendar Event",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_EMAIL@gmail.com",
+          "mode": "list",
+          "cachedResultName": "YOUR_EMAIL@gmail.com"
+        },
+        "eventId": "={{ $json.Calendar_ID }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        256,
+        1568
+      ],
+      "id": "ba9ebfe1-428f-4063-a15f-12fa219554fb",
+      "name": "Auto: Find Event to Update",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_EMAIL@gmail.com",
+          "mode": "list",
+          "cachedResultName": "YOUR_EMAIL@gmail.com"
+        },
+        "eventId": "={{ $json.id }}",
+        "useDefaultReminders": false,
+        "updateFields": {
+          "end": "={{ DateTime.fromISO($('Get row(s) in sheet1').item.json[\"Date\"] + \"T\" + $('Get row(s) in sheet1').item.json[\"Time Slot\"].split(\"-\")[1] + \":00\", {zone: \"Europe/Warsaw\"}).toISO() }}",
+          "start": "={{ DateTime.fromISO($('Get row(s) in sheet1').item.json[\"Date\"] + \"T\" + $('Get row(s) in sheet1').item.json[\"Time Slot\"].split(\"-\")[0] + \":00\", {zone: \"Europe/Warsaw\"}).toISO() }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        480,
+        1568
+      ],
+      "id": "a118ca58-b401-4530-b004-b36dd810862d",
+      "name": "Auto: Update Calendar Event",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Restaurant Tables",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1226895599,
+          "mode": "list",
+          "cachedResultName": "Table Reservation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Reservation ID": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Reservation_ID', ``, 'string') }}",
+            "Table": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Table', ``, 'string') }}",
+            "Party size": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Party_size', ``, 'string') }}",
+            "Name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Name', ``, 'string') }}",
+            "Phone": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Phone', ``, 'string') }}",
+            "Request": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Request', ``, 'string') }}",
+            "Status": "=Cancelled",
+            "Source": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Source', ``, 'string') }}",
+            "Booked At": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Booked_At', ``, 'string') }}",
+            "Mail": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Mail', ``, 'string') }}",
+            "Date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Date', ``, 'string') }}",
+            "Time Slot": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Time_Slot', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "Reservation ID"
+          ],
+          "schema": [
+            {
+              "id": "Reservation ID",
+              "displayName": "Reservation ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Time Slot",
+              "displayName": "Time Slot",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Table",
+              "displayName": "Table",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Party size",
+              "displayName": "Party size",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Mail",
+              "displayName": "Mail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Request",
+              "displayName": "Request",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Source",
+              "displayName": "Source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Booked At",
+              "displayName": "Booked At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "8560e8e9-efc9-4669-8217-511ecaff0618",
+      "name": "Cancel Reservations",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "position": [
+        1408,
+        688
+      ],
+      "typeVersion": 4.6,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Restaurant Tables",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1226895599,
+          "mode": "list",
+          "cachedResultName": "Table Reservation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Reservation ID": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Reservation_ID__using_to_match_', ``, 'string') }}",
+            "Date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Date', ``, 'string') }}",
+            "Table": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Table', ``, 'string') }}",
+            "Name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Name', ``, 'string') }}",
+            "Phone": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Phone', ``, 'string') }}",
+            "Source": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Source', ``, 'string') }}",
+            "Request": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Request', ``, 'string') }}",
+            "Time Slot": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Time_Slot', ``, 'string') }}",
+            "Party size": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Party_size', ``, 'string') }}",
+            "Booked At": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Booked_At', ``, 'string') }}",
+            "Mail": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Mail', ``, 'string') }}",
+            "Status": "Modified"
+          },
+          "matchingColumns": [
+            "Reservation ID"
+          ],
+          "schema": [
+            {
+              "id": "Reservation ID",
+              "displayName": "Reservation ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Time Slot",
+              "displayName": "Time Slot",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Table",
+              "displayName": "Table",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Party size",
+              "displayName": "Party size",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Mail",
+              "displayName": "Mail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Request",
+              "displayName": "Request",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Source",
+              "displayName": "Source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Booked At",
+              "displayName": "Booked At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "6223b0e5-1557-45e5-b09d-666108aaa49d",
+      "name": "Update Reservations",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "position": [
+        1584,
+        688
+      ],
+      "typeVersion": 4.6,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Restaurant Tables",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1226895599,
+          "mode": "list",
+          "cachedResultName": "Table Reservation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Reservation ID": "={{ $('If2').item.json['Reservation ID'] }}",
+            "Calendar_ID": "={{ $json.id }}"
+          },
+          "matchingColumns": [
+            "Reservation ID"
+          ],
+          "schema": [
+            {
+              "id": "Reservation ID",
+              "displayName": "Reservation ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Time Slot",
+              "displayName": "Time Slot",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Table",
+              "displayName": "Table",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Party size",
+              "displayName": "Party size",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Mail",
+              "displayName": "Mail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Request",
+              "displayName": "Request",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Source",
+              "displayName": "Source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Booked At",
+              "displayName": "Booked At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Calendar_ID",
+              "displayName": "Calendar_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        64,
+        960
+      ],
+      "id": "d66c50e8-6393-4775-9d3a-65e2da025f88",
+      "name": "Update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -368,
+        976
+      ],
+      "id": "9854c904-be27-43b5-b760-8a51ac791922",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Restaurant Tables",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1226895599,
+          "mode": "list",
+          "cachedResultName": "Table Reservation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Status",
+              "lookupValue": "Modified"
+            },
+            {
+              "lookupColumn": "Status",
+              "lookupValue": "Cancelled"
+            }
+          ]
+        },
+        "combineFilters": "OR",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -576,
+        1424
+      ],
+      "id": "393e68e6-8868-45f1-975c-9da9081471c5",
+      "name": "Get row(s) in sheet1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -800,
+        1424
+      ],
+      "id": "e1116361-1595-41b3-934f-3d9cc95447d9",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -336,
+        1424
+      ],
+      "id": "8b15581c-abbb-48fa-ae6e-82b90025ca01",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Restaurant Tables",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1226895599,
+          "mode": "list",
+          "cachedResultName": "Table Reservation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Reservation ID": "={{ $('Loop Over Items1').item.json['Reservation ID'] }}",
+            "Status": "Updated"
+          },
+          "matchingColumns": [
+            "Reservation ID"
+          ],
+          "schema": [
+            {
+              "id": "Reservation ID",
+              "displayName": "Reservation ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Time Slot",
+              "displayName": "Time Slot",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Table",
+              "displayName": "Table",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Party size",
+              "displayName": "Party size",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Mail",
+              "displayName": "Mail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Request",
+              "displayName": "Request",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Source",
+              "displayName": "Source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Booked At",
+              "displayName": "Booked At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Calendar_ID",
+              "displayName": "Calendar_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        736,
+        1568
+      ],
+      "id": "aed8099d-5703-4407-be4e-e9d885407cb4",
+      "name": "Confirm The Change",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -784,
+        976
+      ],
+      "id": "69f2bbed-19b5-4af1-93f7-ac1ed2b7a1bc",
+      "name": "Schedule Trigger1"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Restaurant Tables",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1226895599,
+          "mode": "list",
+          "cachedResultName": "Table Reservation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Calendar_ID",
+              "lookupValue": "="
+            }
+          ]
+        },
+        "combineFilters": "OR",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -608,
+        976
+      ],
+      "id": "504499fc-142b-423b-a292-b834c7e69654",
+      "name": "Get New Reservations",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Restaurant Tables",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1226895599,
+          "mode": "list",
+          "cachedResultName": "Table Reservation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Reservation ID": "={{ $('Loop Over Items1').item.json['Reservation ID'] }}",
+            "Status": "Cancellation Confirmed",
+            "Calendar_ID": "Cancelled"
+          },
+          "matchingColumns": [
+            "Reservation ID"
+          ],
+          "schema": [
+            {
+              "id": "Reservation ID",
+              "displayName": "Reservation ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Time Slot",
+              "displayName": "Time Slot",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Table",
+              "displayName": "Table",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Party size",
+              "displayName": "Party size",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Mail",
+              "displayName": "Mail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Request",
+              "displayName": "Request",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Source",
+              "displayName": "Source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Booked At",
+              "displayName": "Booked At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Calendar_ID",
+              "displayName": "Calendar_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        736,
+        1344
+      ],
+      "id": "ebc3e875-0169-4d99-b007-6b51dd18f6fa",
+      "name": "Confirm The Cancellation",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Create Calendar Event",
+        "height": 288,
+        "width": 1232
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -976,
+        896
+      ],
+      "typeVersion": 1,
+      "id": "f3a0bbd0-1436-41cd-86d4-657831e472c6",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Delete / Modify Event",
+        "height": 592,
+        "width": 2032,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -976,
+        1280
+      ],
+      "typeVersion": 1,
+      "id": "4c9afbea-a5dc-49f0-851d-895a07e8c131",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## Mail Confirmation (optional)",
+        "height": 368,
+        "width": 752,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2080,
+        128
+      ],
+      "typeVersion": 1,
+      "id": "7fc48639-3649-4716-b5b2-d4bbcb5b7679",
+      "name": "Sticky Note3"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "2- Output to Object",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Knowledge_base": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ChatGPT-4.1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2- Output to Object": {
+      "main": [
+        [
+          {
+            "node": "3- Object to Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3- Object to Fields": {
+      "main": [
+        [
+          {
+            "node": "Send message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1- Incoming Data": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Learn_Dates_Ogren": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "1- Incoming Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Download media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Table Information": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Table Reservations": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculator": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download media": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Transcribe a recording",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe a recording": {
+      "main": [
+        [
+          {
+            "node": "1- Incoming Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send message": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Reservations": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto: Is Cancelled?": {
+      "main": [
+        [
+          {
+            "node": "Auto: Find Event to Delete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Auto: Find Event to Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto: Find Event to Delete": {
+      "main": [
+        [
+          {
+            "node": "Auto: Delete Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto: Find Event to Update": {
+      "main": [
+        [
+          {
+            "node": "Auto: Update Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancel Reservations": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Reservations": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto: Create Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Auto: Create Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto: Delete Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Confirm The Cancellation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Auto: Is Cancelled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto: Update Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Confirm The Change",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Get New Reservations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get New Reservations": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "YOUR_VERSION_ID",
+  "meta": {
+    "instanceId": "bb1ad3da7037513493b78e62437f293762318b059ee2bc5e7d762afb5acadd31"
+  },
+  "id": "YOUR_WORKFLOW_ID",
+  "tags": []
+}
