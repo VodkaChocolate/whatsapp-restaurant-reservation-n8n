@@ -168,6 +168,6 @@ Pull requests welcome! If you improve the workflow, please sanitize credentials 
 ## 📬 Built by
 
 **Efe Güngör** — Automation & Integration Specialist  
-[LinkedIn](https://www.linkedin.com/in/efegungor1/) | [GitHub](https://github.com/VodkaChocolate)
+[LinkedIn](https://www.linkedin.com/in/efegungor1/) | [GitHub](https://github.com/GungorEfe)
 
 If this helped you, a ⭐ on the repo is appreciated!
